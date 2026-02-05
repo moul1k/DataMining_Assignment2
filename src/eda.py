@@ -213,8 +213,14 @@ def infer_column_type(s: pd.Series) -> Dict[str, Any]:
     reasons = []
     s_nonnull = s.dropna()
     nn = len(s_nonnull)
+
     if nn == 0:
-        return {"type": "text", "confidence": 0.3, "reasons": ["all_missing"], "parse_rates": {}}
+        return {
+            "type": "text",
+            "confidence": 0.3,
+            "reasons": ["all_missing"],
+            "parse_rates": {}
+        }
 
     # parse rates
     num = pd.to_numeric(s_nonnull, errors="coerce")
@@ -222,33 +228,72 @@ def infer_column_type(s: pd.Series) -> Dict[str, Any]:
 
     dt_rate = 0.0
     if s.dtype == "object":
-        dt = pd.to_datetime(s_nonnull.astype(str), errors="coerce", infer_datetime_format=True)
+        dt = pd.to_datetime(
+            s_nonnull.astype(str),
+            errors="coerce",
+            infer_datetime_format=True
+        )
         dt_rate = float(dt.notna().mean())
 
     nunique = int(s_nonnull.nunique(dropna=True))
     unique_ratio = nunique / max(nn, 1)
 
-    # id_like
-    if unique_ratio >= 0.95 and nunique >= min(50, nn) and dt_rate < 0.3:
+    # ---------- FIXED id_like LOGIC ----------
+    # Treat as id_like only if:
+    # - very high uniqueness
+    # - sufficiently large dataset
+    # - NOT clearly numeric
+    if (
+        unique_ratio >= 0.95
+        and nunique >= 50
+        and num_rate < 0.8
+        and dt_rate < 0.3
+    ):
         reasons.append(f"unique_ratio={unique_ratio:.2f}")
-        return {"type": "id_like", "confidence": min(0.95, unique_ratio), "reasons": reasons, "parse_rates": {"numeric": num_rate, "datetime": dt_rate}}
+        return {
+            "type": "id_like",
+            "confidence": min(0.95, unique_ratio),
+            "reasons": reasons,
+            "parse_rates": {"numeric": num_rate, "datetime": dt_rate},
+        }
 
     # datetime
     if dt_rate >= 0.8 and num_rate < 0.8:
         reasons.append(f"datetime_parse_rate={dt_rate:.2f}")
-        return {"type": "datetime", "confidence": dt_rate, "reasons": reasons, "parse_rates": {"numeric": num_rate, "datetime": dt_rate}}
+        return {
+            "type": "datetime",
+            "confidence": dt_rate,
+            "reasons": reasons,
+            "parse_rates": {"numeric": num_rate, "datetime": dt_rate},
+        }
 
     # numeric
     if pd.api.types.is_numeric_dtype(s) or num_rate >= 0.85:
         reasons.append(f"numeric_parse_rate={num_rate:.2f}")
-        return {"type": "numeric", "confidence": max(0.7, num_rate), "reasons": reasons, "parse_rates": {"numeric": num_rate, "datetime": dt_rate}}
+        return {
+            "type": "numeric",
+            "confidence": max(0.7, num_rate),
+            "reasons": reasons,
+            "parse_rates": {"numeric": num_rate, "datetime": dt_rate},
+        }
 
     # categorical vs text
     if nunique <= 50 or unique_ratio <= 0.2:
         reasons.append(f"nunique={nunique}, unique_ratio={unique_ratio:.2f}")
-        return {"type": "categorical", "confidence": 0.75, "reasons": reasons, "parse_rates": {"numeric": num_rate, "datetime": dt_rate}}
+        return {
+            "type": "categorical",
+            "confidence": 0.75,
+            "reasons": reasons,
+            "parse_rates": {"numeric": num_rate, "datetime": dt_rate},
+        }
 
-    return {"type": "text", "confidence": 0.6, "reasons": [f"nunique={nunique}, unique_ratio={unique_ratio:.2f}"], "parse_rates": {"numeric": num_rate, "datetime": dt_rate}}
+    return {
+        "type": "text",
+        "confidence": 0.6,
+        "reasons": [f"nunique={nunique}, unique_ratio={unique_ratio:.2f}"],
+        "parse_rates": {"numeric": num_rate, "datetime": dt_rate},
+    }
+
 
 
 def detect_sensitive_columns(df_safe: pd.DataFrame, safe_to_original: Dict[str, str]) -> Dict[str, Any]:
@@ -1056,3 +1101,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
